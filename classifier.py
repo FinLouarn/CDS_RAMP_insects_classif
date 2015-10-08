@@ -7,18 +7,57 @@ from lasagne.updates import nesterov_momentum
 from nolearn.lasagne import NeuralNet
 import numpy as np
 
+class EarlyStopping(object):
+
+    def __init__(self, patience=100, criterion='valid_loss',
+                 criterion_smaller_is_better=True):
+        self.patience = patience
+        self.best_valid = np.inf
+        self.best_valid_epoch = 0
+        self.best_weights = None
+        self.criterion = criterion
+        self.criterion_smaller_is_better = criterion_smaller_is_better
+
+    def __call__(self, nn, train_history):
+        current_valid = train_history[-1][self.criterion]
+        current_epoch = train_history[-1]['epoch']
+        if self.criterion_smaller_is_better:
+            cond = current_valid < self.best_valid
+        else:
+            cond = current_valid > self.best_valid
+        if cond:
+            self.best_valid = current_valid
+            self.best_valid_epoch = current_epoch
+            self.best_weights = nn.get_all_params_values()
+        elif self.best_valid_epoch + self.patience < current_epoch:
+            if nn.verbose:
+                print("Early stopping.")
+                print("Best valid loss was {:.6f} at epoch {}.".format(
+                    self.best_valid, self.best_valid_epoch))
+            nn.load_weights_from(self.best_weights)
+            if nn.verbose:
+                print("Weights set.")
+            raise StopIteration()
+
+    def load_best_weights(self, nn, train_history):
+        nn.load_weights_from(self.best_weights)
+
 def build_model(hyper_parameters):
     net = NeuralNet(
         layers=[
             ('input', layers.InputLayer),
             ('conv1', layers.Conv2DLayer),
-            ('pool1', layers.MaxPool2DLayer),
+#            ('pool1', layers.MaxPool2DLayer),
             ('conv2', layers.Conv2DLayer),
             ('pool2', layers.MaxPool2DLayer),
             ('conv3', layers.Conv2DLayer),
-            ('pool3', layers.MaxPool2DLayer),
+#            ('pool3', layers.MaxPool2DLayer),
+            ('conv4', layers.Conv2DLayer)
+            ('pool4', layers.MaxPool2DLayer),
             ('hidden4', layers.DenseLayer),
+            ('dropout4', layers.DropoutLayer),
             ('hidden5', layers.DenseLayer),
+            ('dropout5', layers.DropoutLayer),
             ('output', layers.DenseLayer),
             ],
         input_shape=(None, 3, 64, 64),
@@ -29,14 +68,25 @@ def build_model(hyper_parameters):
     return net
 
 hyper_parameters = dict(
-    conv1_num_filters=64, conv1_filter_size=(3, 3), pool1_pool_size=(2, 2),
-    conv2_num_filters=128, conv2_filter_size=(2, 2), pool2_pool_size=(2, 2),
-    conv3_num_filters=128, conv3_filter_size=(2, 2), pool3_pool_size=(2, 2),
-    hidden4_num_units=500, hidden5_num_units=500,
+    conv1_num_filters=16, conv1_filter_size=(3, 3),
+#    pool1_pool_size=(1, 1),
+    conv2_num_filters=32, conv2_filter_size=(3, 3),
+    pool2_pool_size=(2, 2),
+    conv3_num_filters=32, conv3_filter_size=(2, 2),
+#    pool3_pool_size=(1, 1),
+    conv4_num_filters=32, conv4_filter_size=(2, 2),
+    pool4_pool_size=(2, 2),
+    hidden4_num_units=200, dropout4_p=0.4, hidden4_nonlinearity = nonlinearities.leaky_rectify,
+    #hidden4_regularization = regularization.l1,
+    hidden5_num_units=200, dropout5_p=0.5, hidden5_nonlinearity = nonlinearities.leaky_rectify,
+    #hidden5_regularization = regularization.l2,
     output_num_units=18, output_nonlinearity=nonlinearities.softmax,
     update_learning_rate=0.01,
     update_momentum=0.9,
-    max_epochs=15,
+    max_epochs=20,
+
+    # handlers
+    on_epoch_finished = [EarlyStopping(patience=10, criterion='valid_loss')]
 )
 
 
