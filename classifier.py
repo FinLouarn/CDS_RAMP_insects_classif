@@ -2,12 +2,13 @@ import os
 os.environ["THEANO_FLAGS"] = "device=gpu"
 from sklearn.base import BaseEstimator
 import os
-from lasagne import layers, nonlinearities
+from lasagne import layers, nonlinearities, updates, init, objectives
 from lasagne.updates import nesterov_momentum
 from nolearn.lasagne import NeuralNet
+from nolearn.lasagne.handlers import EarlyStopping
 import numpy as np
 
-class EarlyStopping(object):
+''' class EarlyStopping(object):
 
     def __init__(self, patience=100, criterion='valid_loss',
                  criterion_smaller_is_better=True):
@@ -41,6 +42,8 @@ class EarlyStopping(object):
 
     def load_best_weights(self, nn, train_history):
         nn.load_weights_from(self.best_weights)
+'''
+
 
 def build_model(hyper_parameters):
     net = NeuralNet(
@@ -48,19 +51,21 @@ def build_model(hyper_parameters):
             ('input', layers.InputLayer),
             ('conv1', layers.Conv2DLayer),
 #            ('pool1', layers.MaxPool2DLayer),
-            ('conv2', layers.Conv2DLayer),
+#            ('conv2', layers.Conv2DLayer),
             ('pool2', layers.MaxPool2DLayer),
             ('conv3', layers.Conv2DLayer),
 #            ('pool3', layers.MaxPool2DLayer),
-            ('conv4', layers.Conv2DLayer)
+#            ('conv4', layers.Conv2DLayer),
             ('pool4', layers.MaxPool2DLayer),
-            ('hidden4', layers.DenseLayer),
-            ('dropout4', layers.DropoutLayer),
-            ('hidden5', layers.DenseLayer),
-            ('dropout5', layers.DropoutLayer),
+            ('conv5', layers.Conv2DLayer),
+            ('pool5', layers.MaxPool2DLayer),
+            ('hidden6', layers.DenseLayer),
+            ('dropout6', layers.DropoutLayer),
+            ('hidden7', layers.DenseLayer),
+            ('dropout7', layers.DropoutLayer),
             ('output', layers.DenseLayer),
             ],
-        input_shape=(None, 3, 64, 64),
+        input_shape=(None, 3, 44, 44), # 64 to 44 because cropping input images with 10:54 x 10:54
         use_label_encoder=True,
         verbose=1,
         **hyper_parameters
@@ -68,25 +73,28 @@ def build_model(hyper_parameters):
     return net
 
 hyper_parameters = dict(
-    conv1_num_filters=16, conv1_filter_size=(3, 3),
+    conv1_num_filters=32, conv1_filter_size=(5, 5),
 #    pool1_pool_size=(1, 1),
-    conv2_num_filters=32, conv2_filter_size=(3, 3),
+#    conv2_num_filters=32, conv2_filter_size=(5, 5),
     pool2_pool_size=(2, 2),
-    conv3_num_filters=32, conv3_filter_size=(2, 2),
+    conv3_num_filters=64, conv3_filter_size=(3, 3),
 #    pool3_pool_size=(1, 1),
-    conv4_num_filters=32, conv4_filter_size=(2, 2),
+#    conv4_num_filters=64, conv4_filter_size=(3, 3),
     pool4_pool_size=(2, 2),
-    hidden4_num_units=200, dropout4_p=0.4, hidden4_nonlinearity = nonlinearities.leaky_rectify,
-    #hidden4_regularization = regularization.l1,
-    hidden5_num_units=200, dropout5_p=0.5, hidden5_nonlinearity = nonlinearities.leaky_rectify,
-    #hidden5_regularization = regularization.l2,
+    conv5_num_filters=128, conv5_filter_size=(2, 2),
+    pool5_pool_size=(2, 2),
+    hidden6_num_units=300, dropout6_p=0.5, hidden6_nonlinearity = nonlinearities.leaky_rectify,
+    #hidden6_regularization = regularization.l1,
+    hidden7_num_units=300, dropout7_p=0.5, hidden7_nonlinearity = nonlinearities.leaky_rectify,
+    #hidden7_regularization = regularization.l2,
     output_num_units=18, output_nonlinearity=nonlinearities.softmax,
     update_learning_rate=0.01,
-    update_momentum=0.9,
-    max_epochs=20,
+    #update_momentum=0.9,
+    update=updates.adagrad,
+    max_epochs=30,
 
     # handlers
-    on_epoch_finished = [EarlyStopping(patience=10, criterion='valid_loss')]
+    on_epoch_finished = [EarlyStopping(patience=10, criterion='valid_accuracy', criterion_smaller_is_better=False)]
 )
 
 
@@ -96,8 +104,9 @@ class Classifier(BaseEstimator):
         self.net = build_model(hyper_parameters)
 
     def preprocess(self, X):
-        X = (X / 255.)
+        X = (X / X.max())
         X = X.astype(np.float32)
+        X = X[:, 10:54, 10:54, :]
         X = X.transpose((0, 3, 1, 2))
         return X
 
